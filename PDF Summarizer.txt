@@ -1,0 +1,56 @@
+import streamlit as st
+import re
+import os
+from transformers import pipeline
+from PyPDF2 import PdfReader
+
+def clean_text(text):
+    """Clean extracted text by removing problematic characters and extra spaces."""
+    text = re.sub(r'\(cid:\d+\)', ' ', text)  # Replace (cid:###) with space
+    text = re.sub(r'\s+', ' ', text).strip()  # Remove multiple spaces
+    return text
+
+def extract_text_from_pdf(pdf_path):
+    """Extract text from a given PDF file."""
+    text = ""
+    with open(pdf_path, "rb") as file:
+        pdf_reader = PdfReader(file)
+        for page in pdf_reader.pages:
+            text += page.extract_text() + "\n"
+    return clean_text(text)
+
+def summarize_pdf(pdf_file_path, max_length=150, min_length=50):
+    """Generate a summary from the extracted PDF text."""
+    text = extract_text_from_pdf(pdf_file_path)
+    summarizer = pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
+    summary = summarizer(text, max_length=max_length, min_length=min_length, do_sample=False)
+    return summary[0]['summary_text']
+
+# Streamlit UI
+st.title("📄 PDF Summarizer")
+pdf_file = st.file_uploader("Drop your PDF file here (max 3 pages recommended)", type=["pdf"])
+
+if pdf_file is not None:
+    pdf_file_path = f"temp_{pdf_file.name}"
+    
+    # Save uploaded file
+    with open(pdf_file_path, "wb") as f:
+        f.write(pdf_file.read())
+    
+    summary = summarize_pdf(pdf_file_path)
+    os.remove(pdf_file_path)  # Clean up after processing
+    
+    st.subheader("Summary")
+    edited_summary = st.text_area("Edit the summary if needed:", summary, height=200)
+    
+    if st.button("Save Summary"):
+        with open("summary.txt", "w") as file:
+            file.write(edited_summary)
+        
+        with open("summary.txt", "rb") as file:
+            btn = st.download_button(
+                label="Download Summary",
+                data=file,
+                file_name="summary.txt",
+                mime="text/plain"
+            )
